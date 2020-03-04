@@ -13,6 +13,7 @@ namespace MovieRecommendationApp.BLL
         public static void Load(IServiceCollection services, IConfiguration configuration)
         {
             services.AddTransient<IDataParserService, DataParserService>();
+            services.AddTransient<IMovieService, MovieService>();
 
             DALModule.Load(services, configuration);
         }

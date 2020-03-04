@@ -24,5 +24,19 @@ namespace MovieRecommendationApp.UI.Controllers
             await dataParserService.ParseData();
             return Ok();
         }
+
+        [HttpGet("details-similarity")]
+        public async Task<ActionResult> GenerateCreditsGenresKeywordsCastSimilarityMatrix()
+        {
+            await dataParserService.GenerateCreditsGenresKeywordsCastSimilarityMatrix();
+            return Ok();
+        }
+
+        [HttpGet("sync-similarity-matrix")]
+        public async Task<ActionResult> SyncSimilarityMatrix()
+        {
+            await dataParserService.SyncSimilarityMatrix();
+            return Ok();
+        }
     }
 }

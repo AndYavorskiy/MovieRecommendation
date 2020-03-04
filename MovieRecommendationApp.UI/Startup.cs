@@ -10,12 +10,13 @@ namespace MovieRecommendationApp.UI
 {
     public class Startup
     {
+        private readonly string MovieRecommendationPolicy = "MovieRecommendationPolicy";
+        public IConfiguration Configuration { get; }
+
         public Startup(IConfiguration configuration)
         {
             Configuration = configuration;
         }
-
-        public IConfiguration Configuration { get; }
 
         public void ConfigureServices(IServiceCollection services)
         {
@@ -30,6 +31,19 @@ namespace MovieRecommendationApp.UI
                 });
             });
 
+            services.AddCors(options => options.AddPolicy(MovieRecommendationPolicy, builder =>
+            {
+                builder.AllowAnyOrigin()
+                       .AllowAnyMethod()
+                       .AllowAnyHeader();
+            }));
+
+            services.AddStackExchangeRedisCache(options =>
+            {
+                options.Configuration = "localhost:6379";
+                options.InstanceName = "MovieRecommendation";
+            });
+
             BLLModule.Load(services, Configuration);
         }
 
@@ -39,6 +53,8 @@ namespace MovieRecommendationApp.UI
             {
                 app.UseDeveloperExceptionPage();
             }
+
+            app.UseCors(MovieRecommendationPolicy);
 
             app.UseSwagger();
 
