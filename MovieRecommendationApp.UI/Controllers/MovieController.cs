@@ -22,7 +22,7 @@ namespace MovieRecommendationApp.UI.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<List<MovieModel>>> Search([FromQuery] MovieSearchFilter filter)
+        public async Task<ActionResult<ListData<MovieModel>>> Search([FromQuery] MovieSearchFilter filter)
         {
             var res = await movieService.Search(filter);
             return Ok(res);

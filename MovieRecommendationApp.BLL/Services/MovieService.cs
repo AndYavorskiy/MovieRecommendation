@@ -1,17 +1,13 @@
-﻿using CsvHelper;
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
 using MovieRecommendationApp.BLL.Models;
+using MovieRecommendationApp.BLL.ParseModels;
 using MovieRecommendationApp.DAL.Contexts;
 using MovieRecommendationApp.DAL.Entities;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
-using System.Globalization;
-using System.IO;
 using System.Linq;
-using System.Reflection;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace MovieRecommendationApp.BLL.Services
@@ -31,15 +27,29 @@ namespace MovieRecommendationApp.BLL.Services
             this.distributedCache = distributedCache;
         }
 
-        public async Task<List<MovieModel>> Search(MovieSearchFilter filter)
+        public async Task<ListData<MovieModel>> Search(MovieSearchFilter filter)
         {
-            return (await dbContext.Movies
-                 .OrderByDescending(x => x.ReleaseDate)
-                 .Skip(filter.PageIndex * filter.PageSize)
-                 .Take(filter.PageSize)
-                 .ToListAsync())
-                 .Select(x => MapMovieToModel(x, "w400"))
-                 .ToList();
+            var query = dbContext.Movies
+                .OrderByDescending(x => x.ReleaseDate)
+                .AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(filter.FilterText))
+            {
+                query = query.Where(x => x.Title.ToUpper().Contains(filter.FilterText.Trim().ToUpper()));
+            }
+
+            var totalCount = await query.CountAsync();
+
+            var items = await query
+                .Skip(filter.PageIndex * filter.PageSize)
+                .Take(filter.PageSize)
+                .ToListAsync();
+
+            return new ListData<MovieModel>
+            {
+                Items = items.Select(x => MapMovieToModel(x, "w400")).ToList(),
+                TotalCount = totalCount
+            };
         }
 
         public async Task<MovieModel> Get(int id)
@@ -105,26 +115,42 @@ namespace MovieRecommendationApp.BLL.Services
             OriginalId = movie.Id,
             Adult = movie.Adult,
             Budget = movie.Budget,
-            Genres = movie.Genres,
+            Genres = JsonConvert.DeserializeObject<IdName[]>(movie.Genres),
             ImdbId = movie.ImdbId,
             OriginalLanguage = movie.OriginalLanguage,
             OriginalTitle = movie.OriginalTitle,
             Overview = movie.Overview,
             Popularity = movie.Popularity,
             PosterPath = $"http://image.tmdb.org/t/p/{width}{movie.PosterPath}",
-            ProductionCompanies = movie.ProductionCompanies,
-            ProductionCountries = movie.ProductionCountries,
+            Companies = JsonConvert.DeserializeObject<IdName[]>(movie.ProductionCompanies),
+            Countries = JsonConvert.DeserializeObject<CountryIsoName[]>(movie.ProductionCountries)
+                .Select(x => new IsoName() { Iso = x.iso_3166_1, Name = x.name })
+                .ToArray(),
             ReleaseDate = movie.ReleaseDate,
             Revenue = movie.Revenue,
             Runtime = movie.Runtime,
-            SpokenLanguages = movie.SpokenLanguages,
+            Languages = JsonConvert.DeserializeObject<LanguageIsoName[]>(movie.SpokenLanguages)
+                .Select(x => new IsoName() { Iso = x.iso_639_1, Name = x.name })
+                .ToArray(),
             Status = movie.Status,
             Title = movie.Title,
             VoteAverage = movie.VoteAverage,
             VoteCount = movie.VoteCount,
-            Crew = movie.Crew,
-            Cast = movie.Cast,
-            Keywords = movie.Keywords
+            Directors = JsonConvert.DeserializeObject<CrewBigModel[]>(movie.Crew)
+                .Where(x => string.Equals(x.job, "Director", StringComparison.InvariantCultureIgnoreCase))
+                .Take(3)
+                .Select(x => x.name)
+                .ToArray(),
+            Cast = JsonConvert.DeserializeObject<CastBigModel[]>(movie.Cast)
+                .OrderBy(x => x.order)
+                .Take(5)
+                .Select(x => new CharacterActorModel()
+                {
+                    Character = x.character,
+                    ActorName = x.name
+                })
+                .ToArray(),
+            Keywords = JsonConvert.DeserializeObject<IdName[]>(movie.Keywords)
         };
     }
 }
