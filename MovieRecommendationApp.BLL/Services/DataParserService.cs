@@ -38,9 +38,9 @@ namespace MovieRecommendationApp.BLL.Services
 
         public async Task ParseData()
         {
-            var movies = GetMoviesBig();
-            var credits = GetCreditsBig();
-            var keywords = GetKeywordsBig();
+            var movies = GetMovies();
+            var credits = GetCredits();
+            var keywords = GetKeywords();
 
             var moviesToSave = movies
                 .Where(x => x.vote_average.HasValue
@@ -93,6 +93,10 @@ namespace MovieRecommendationApp.BLL.Services
                 .OrderByDescending(x => x.ReleaseDate)
                 .Take(5000)
                 .ToList();
+
+            var g = moviesToSave.GroupBy(x => x.Title).ToList();
+
+            var gm = g.Where(x => x.Count() > 1).ToList();
 
             await dbContext.Movies.BatchDeleteAsync();
 
@@ -186,7 +190,7 @@ namespace MovieRecommendationApp.BLL.Services
         {
             var top = 3;
 
-            var crew = JsonConvert.DeserializeObject<CrewBigModel[]>(movie.Crew)
+            var crew = JsonConvert.DeserializeObject<CrewModel[]>(movie.Crew)
                 .Where(x => string.Equals(x.job, "Director", StringComparison.InvariantCultureIgnoreCase))
                 .Take(top)
                 .Select(x => $"Crew-{x.name.Replace(" ", "")}")
@@ -213,7 +217,7 @@ namespace MovieRecommendationApp.BLL.Services
 
         private static string JoinWords(IEnumerable<string> words) => string.Join(" ", words);
 
-        private static List<MovieModelBig> GetMoviesBig()
+        private static List<MovieModelBig> GetMovies()
         {
             var movies = new List<MovieModelBig>();
 
@@ -223,7 +227,10 @@ namespace MovieRecommendationApp.BLL.Services
                 csv.Configuration.Delimiter = ",";
                 csv.Configuration.HasHeaderRecord = true;
 
-                movies = csv.GetRecords<MovieModelBig>().ToList();
+                movies = csv.GetRecords<MovieModelBig>()
+                    .GroupBy(x => x.id)
+                    .Select(x => x.First())
+                    .ToList();
             }
 
             return movies
@@ -231,9 +238,9 @@ namespace MovieRecommendationApp.BLL.Services
                 .ToList();
         }
 
-        private static List<CreditsBigModel> GetCreditsBig()
+        private static List<CreditsModel> GetCredits()
         {
-            var credits = new List<CreditsBigModel>();
+            var credits = new List<CreditsModel>();
 
             using (var reader = new StreamReader(GetDataSourcesPath("credits.csv")))
             using (var csv = new CsvReader(reader, CultureInfo.InvariantCulture))
@@ -241,15 +248,18 @@ namespace MovieRecommendationApp.BLL.Services
                 csv.Configuration.Delimiter = ",";
                 csv.Configuration.HasHeaderRecord = true;
 
-                credits = csv.GetRecords<CreditsBigModel>().ToList();
+                credits = csv.GetRecords<CreditsModel>()
+                    .GroupBy(x => x.id)
+                    .Select(x => x.First())
+                    .ToList();
             }
 
             return credits;
         }
 
-        private static List<KeywordsBigModel> GetKeywordsBig()
+        private static List<KeywordsModel> GetKeywords()
         {
-            var keywords = new List<KeywordsBigModel>();
+            var keywords = new List<KeywordsModel>();
 
             using (var reader = new StreamReader(GetDataSourcesPath("keywords.csv")))
             using (var csv = new CsvReader(reader, CultureInfo.InvariantCulture))
@@ -257,7 +267,10 @@ namespace MovieRecommendationApp.BLL.Services
                 csv.Configuration.Delimiter = ",";
                 csv.Configuration.HasHeaderRecord = true;
 
-                keywords = csv.GetRecords<KeywordsBigModel>().ToList();
+                keywords = csv.GetRecords<KeywordsModel>()
+                    .GroupBy(x => x.id)
+                    .Select(x => x.First())
+                    .ToList();
             }
 
             return keywords;

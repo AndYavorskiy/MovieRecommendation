@@ -10,6 +10,6 @@ namespace MovieRecommendationApp.BLL.Services
 
         Task<MovieModel> Get(int id);
 
-        Task<List<MovieModel>> GetRecommendations(int id);
+        Task<List<MovieModel>> GetRecommendations(int id, int top);
     }
 }

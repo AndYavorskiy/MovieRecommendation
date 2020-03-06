@@ -36,9 +36,9 @@ namespace MovieRecommendationApp.UI.Controllers
         }
 
         [HttpGet("recommendations/{id}")]
-        public async Task<ActionResult<List<MovieModel>>> GetRecommendations(int id)
+        public async Task<ActionResult<List<MovieModel>>> GetRecommendations(int id, int top)
         {
-            var res = await movieService.GetRecommendations(id);
+            var res = await movieService.GetRecommendations(id, top);
             return Ok(res);
         }
     }

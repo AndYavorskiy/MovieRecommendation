@@ -1,6 +1,6 @@
 ﻿namespace MovieRecommendationApp.BLL.ParseModels
 {
-    public class CrewBigModel
+    public class CrewModel
     {
         public string credit_id { get; set; }
         public string department { get; set; }

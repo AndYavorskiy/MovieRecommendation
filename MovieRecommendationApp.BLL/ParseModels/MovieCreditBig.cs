@@ -28,7 +28,7 @@ namespace MovieRecommendationApp.BLL.ParseModels
 
         //Credits
         public CastBigModel[] cast { get; set; }
-        public CrewBigModel[] crew { get; set; }
+        public CrewModel[] crew { get; set; }
 
         //Keywords
         public IdName[] keywords { get; set; }

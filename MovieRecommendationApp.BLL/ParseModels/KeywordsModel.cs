@@ -1,6 +1,6 @@
 ﻿namespace MovieRecommendationApp.BLL.ParseModels
 {
-    public class KeywordsBigModel
+    public class KeywordsModel
     {
         public int id { get; set; }
         public string keywords { get; set; }

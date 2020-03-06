@@ -65,10 +65,8 @@ namespace MovieRecommendationApp.BLL.Services
             return MapMovieToModel(movie, "original");
         }
 
-        public async Task<List<MovieModel>> GetRecommendations(int id)
+        public async Task<List<MovieModel>> GetRecommendations(int id, int top)
         {
-            int topSimilar = 10;
-
             var movies = await dbContext.Movies
                 .OrderBy(x => x.Id)
                 .Select(x => new { x.Id })
@@ -94,7 +92,7 @@ namespace MovieRecommendationApp.BLL.Services
                 .OrderByDescending(x => x.similarity)
                 .Select(x => x.Id)
                 .Where(x => x != id)                //remove similarity (1) with itself
-                .Take(topSimilar)
+                .Take(top)
                 .ToList();
 
             var similarMovies = await dbContext.Movies
@@ -136,7 +134,7 @@ namespace MovieRecommendationApp.BLL.Services
             Title = movie.Title,
             VoteAverage = movie.VoteAverage,
             VoteCount = movie.VoteCount,
-            Directors = JsonConvert.DeserializeObject<CrewBigModel[]>(movie.Crew)
+            Directors = JsonConvert.DeserializeObject<CrewModel[]>(movie.Crew)
                 .Where(x => string.Equals(x.job, "Director", StringComparison.InvariantCultureIgnoreCase))
                 .Take(3)
                 .Select(x => x.name)
