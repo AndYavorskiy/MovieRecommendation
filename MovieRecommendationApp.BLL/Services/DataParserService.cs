@@ -113,7 +113,8 @@ namespace MovieRecommendationApp.BLL.Services
                     Crew = x.Crew,
                     Cast = x.Cast,
                     Keywords = x.Keywords,
-                    Genres = x.Genres
+                    Genres = x.Genres,
+                    Overview = x.Overview
                 })
                 .ToListAsync();
 
@@ -212,7 +213,7 @@ namespace MovieRecommendationApp.BLL.Services
                 .Select(x => $"Gen-{x.name.Replace(" ", "")}")
                 .ToList();
 
-            return $"{JoinWords(crew)} {JoinWords(cast)} {JoinWords(keywords)} {JoinWords(genres)}";
+            return $"{JoinWords(crew)} {JoinWords(cast)} {JoinWords(keywords)} {JoinWords(genres)} {movie.Overview}";
         }
 
         private static string JoinWords(IEnumerable<string> words) => string.Join(" ", words);
@@ -330,6 +331,7 @@ namespace MovieRecommendationApp.BLL.Services
             public string Cast { get; set; }
             public string Keywords { get; set; }
             public string Genres { get; set; }
+            public string Overview { get; set; }
         }
     }
 }
