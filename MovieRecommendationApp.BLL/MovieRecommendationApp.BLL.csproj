@@ -17,4 +17,20 @@
     <ProjectReference Include="..\MovieRecommendationApp.DAL\MovieRecommendationApp.DAL.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="DataSources\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="DataSources\credits.csv">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="DataSources\keywords.csv">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="DataSources\movies_metadata.csv">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

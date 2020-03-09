@@ -42,7 +42,7 @@ namespace MovieRecommendationApp.BLL.Services
             var credits = GetCredits();
             var keywords = GetKeywords();
 
-            var moviesToSave = movies
+            var parsedMovies = movies
                 .Where(x => x.vote_average.HasValue
                         && x.vote_count.HasValue
                         && x.popularity.HasValue
@@ -50,6 +50,26 @@ namespace MovieRecommendationApp.BLL.Services
                 .Where(x => x.status == "Released")
                 .Where(x => x.popularity > 1)
                 .Where(x => x.release_date.HasValue)
+                .ToList();
+
+
+            await dbContext.MoviesGenres.BatchDeleteAsync();
+            await dbContext.Movies.BatchDeleteAsync();
+            await dbContext.Genres.BatchDeleteAsync();
+
+            var genres = parsedMovies.Select(x => JsonConvert.DeserializeObject<IdName[]>(x.genres.Replace(@"\xa", " ").Replace(@"\\x92", "'").Replace(@"\x", " ").Replace(": None", ": 'None'")))
+                .SelectMany(x => x.Select(y => y.name))
+                .Distinct()
+                .OrderBy(x => x)
+                .Select(x => new Genre { Name = x })
+                .ToList();
+
+            dbContext.Genres.AddRange(genres);
+            await dbContext.SaveChangesAsync();
+
+            var genresFromDb = genres.ToDictionary(x => x.Name, x => x.Id);
+
+            var moviesToSave = parsedMovies
                 .Join(credits,
                 x => x.id,
                 x => x.id,
@@ -61,6 +81,8 @@ namespace MovieRecommendationApp.BLL.Services
                         Adult = movie.adult,
                         Budget = movie.budget,
                         Genres = movie.genres.Replace(@"\xa", " ").Replace(@"\\x92", "'").Replace(@"\x", " ").Replace(": None", ": 'None'"),
+                        MoviesGenres = JsonConvert.DeserializeObject<IdName[]>(movie.genres.Replace(@"\xa", " ").Replace(@"\\x92", "'").Replace(@"\x", " ").Replace(": None", ": 'None'"))
+                        .Select(x => new MovieGenre { GenreId = genresFromDb[x.name] }).ToList(),
                         ImdbId = movie.imdb_id,
                         OriginalLanguage = movie.original_language,
                         OriginalTitle = movie.original_title,
@@ -94,13 +116,10 @@ namespace MovieRecommendationApp.BLL.Services
                 .Take(5000)
                 .ToList();
 
-            var g = moviesToSave.GroupBy(x => x.Title).ToList();
 
-            var gm = g.Where(x => x.Count() > 1).ToList();
-
-            await dbContext.Movies.BatchDeleteAsync();
-
-            await dbContext.BulkInsertAsync(moviesToSave);
+            //await dbContext.BulkInsertAsync(moviesToSave);
+            dbContext.Movies.AddRange(moviesToSave);
+            await dbContext.SaveChangesAsync();
         }
 
         public async Task GenerateCreditsGenresKeywordsCastSimilarityMatrix()

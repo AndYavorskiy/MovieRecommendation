@@ -1,10 +1,10 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace MovieRecommendationApp.DAL.Entities
 {
-    [Table("Movies", Schema = "dbo")]
     public class Movie
     {
         [Key]
@@ -37,5 +37,7 @@ namespace MovieRecommendationApp.DAL.Entities
 
         //Keywords
         public string Keywords { get; set; }
+
+        public ICollection<MovieGenre> MoviesGenres { get; set; }
     }
 }
