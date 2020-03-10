@@ -52,12 +52,11 @@ namespace MovieRecommendationApp.BLL.Services
                 .Where(x => x.release_date.HasValue)
                 .ToList();
 
-
             await dbContext.MoviesGenres.BatchDeleteAsync();
             await dbContext.Movies.BatchDeleteAsync();
             await dbContext.Genres.BatchDeleteAsync();
 
-            var genres = parsedMovies.Select(x => JsonConvert.DeserializeObject<IdName[]>(x.genres.Replace(@"\xa", " ").Replace(@"\\x92", "'").Replace(@"\x", " ").Replace(": None", ": 'None'")))
+            var genres = parsedMovies.Select(x => JsonConvert.DeserializeObject<IdName[]>(x.genres))
                 .SelectMany(x => x.Select(y => y.name))
                 .Distinct()
                 .OrderBy(x => x)
@@ -67,58 +66,54 @@ namespace MovieRecommendationApp.BLL.Services
             dbContext.Genres.AddRange(genres);
             await dbContext.SaveChangesAsync();
 
-            var genresFromDb = genres.ToDictionary(x => x.Name, x => x.Id);
-
             var moviesToSave = parsedMovies
                 .Join(credits,
                 x => x.id,
                 x => x.id,
-                (movie, credit) =>
+                (movie, credit) => new Movie
                 {
-                    Movie movieCreditBig = new Movie
-                    {
-                        OriginalId = movie.id,
-                        Adult = movie.adult,
-                        Budget = movie.budget,
-                        Genres = movie.genres.Replace(@"\xa", " ").Replace(@"\\x92", "'").Replace(@"\x", " ").Replace(": None", ": 'None'"),
-                        MoviesGenres = JsonConvert.DeserializeObject<IdName[]>(movie.genres.Replace(@"\xa", " ").Replace(@"\\x92", "'").Replace(@"\x", " ").Replace(": None", ": 'None'"))
-                        .Select(x => new MovieGenre { GenreId = genresFromDb[x.name] }).ToList(),
-                        ImdbId = movie.imdb_id,
-                        OriginalLanguage = movie.original_language,
-                        OriginalTitle = movie.original_title,
-                        Overview = movie.overview,
-                        Popularity = movie.popularity.Value,
-                        PosterPath = movie.poster_path,
-                        ProductionCompanies = movie.production_companies,
-                        ProductionCountries = movie.production_countries,
-                        ReleaseDate = movie.release_date,
-                        Revenue = movie.revenue,
-                        Runtime = movie.runtime,
-                        SpokenLanguages = movie.spoken_languages,
-                        Status = movie.status,
-                        Title = movie.title,
-                        VoteAverage = movie.vote_average.Value,
-                        VoteCount = movie.vote_count.Value,
-                        Crew = credit.crew.Replace(@"\xa", " ").Replace(@"\\x92", "'").Replace(@"\x", " ").Replace(": None", ": 'None'"),
-                        Cast = credit.cast.Replace(@"\xa", " ").Replace(@"\\x92", "'").Replace(@"\x", " ").Replace(": None", ": 'None'")
-                    };
-
-                    var kWords = keywords.FirstOrDefault(x => x.id == movie.id);
-
-                    if (kWords != null)
-                    {
-                        movieCreditBig.Keywords = kWords.keywords.Replace(@"\xa", " ");
-                    }
-
-                    return movieCreditBig;
+                    OriginalId = movie.id,
+                    Adult = movie.adult,
+                    Budget = movie.budget,
+                    Genres = movie.genres,
+                    ImdbId = movie.imdb_id,
+                    OriginalLanguage = movie.original_language,
+                    OriginalTitle = movie.original_title,
+                    Overview = movie.overview,
+                    Popularity = movie.popularity.Value,
+                    PosterPath = movie.poster_path,
+                    ProductionCompanies = movie.production_companies,
+                    ProductionCountries = movie.production_countries,
+                    ReleaseDate = movie.release_date,
+                    Revenue = movie.revenue,
+                    Runtime = movie.runtime,
+                    SpokenLanguages = movie.spoken_languages,
+                    Status = movie.status,
+                    Title = movie.title,
+                    VoteAverage = movie.vote_average.Value,
+                    VoteCount = movie.vote_count.Value,
+                    Crew = credit.crew,
+                    Cast = credit.cast,
+                    Keywords = keywords.FirstOrDefault(x => x.id == movie.id)?.keywords
                 })
                 .OrderByDescending(x => x.ReleaseDate)
                 .Take(5000)
                 .ToList();
 
+            await dbContext.BulkInsertAsync(moviesToSave);
 
-            //await dbContext.BulkInsertAsync(moviesToSave);
-            dbContext.Movies.AddRange(moviesToSave);
+            var moviesFromDb = await dbContext.Movies.Select(x => new { x.Id, x.Genres }).ToListAsync();
+            var genresFromDb = genres.ToDictionary(x => x.Name, x => x.Id);
+
+            var moviesGenres = moviesFromDb.SelectMany(x => JsonConvert.DeserializeObject<IdName[]>(x.Genres)
+                .Select(g => new MovieGenre
+                {
+                    MovieId = x.Id,
+                    GenreId = genresFromDb[g.name]
+                })
+                .ToList());
+
+            dbContext.MoviesGenres.AddRange(moviesGenres);
             await dbContext.SaveChangesAsync();
         }
 
@@ -250,6 +245,12 @@ namespace MovieRecommendationApp.BLL.Services
                 movies = csv.GetRecords<MovieModelBig>()
                     .GroupBy(x => x.id)
                     .Select(x => x.First())
+                    .Select(x =>
+                    {
+                        x.genres = x.genres.Replace(@"\xa", " ").Replace(@"\\x92", "'").Replace(@"\x", " ").Replace(": None", ": 'None'");
+
+                        return x;
+                    })
                     .ToList();
             }
 
@@ -271,6 +272,13 @@ namespace MovieRecommendationApp.BLL.Services
                 credits = csv.GetRecords<CreditsModel>()
                     .GroupBy(x => x.id)
                     .Select(x => x.First())
+                    .Select(x =>
+                    {
+                        x.crew = x.crew.Replace(@"\xa", " ").Replace(@"\\x92", "'").Replace(@"\x", " ").Replace(": None", ": 'None'");
+                        x.cast = x.cast.Replace(@"\xa", " ").Replace(@"\\x92", "'").Replace(@"\x", " ").Replace(": None", ": 'None'");
+
+                        return x;
+                    })
                     .ToList();
             }
 
@@ -290,6 +298,12 @@ namespace MovieRecommendationApp.BLL.Services
                 keywords = csv.GetRecords<KeywordsModel>()
                     .GroupBy(x => x.id)
                     .Select(x => x.First())
+                    .Select(x =>
+                    {
+                        x.keywords = x.keywords.Replace(@"\xa", " ");
+
+                        return x;
+                    })
                     .ToList();
             }
 

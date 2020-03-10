@@ -21,8 +21,8 @@ namespace MovieRecommendationApp.UI.Controllers
             this.movieService = movieService;
         }
 
-        [HttpGet]
-        public async Task<ActionResult<ListData<MovieModel>>> Search([FromQuery] MovieSearchFilter filter)
+        [HttpPost]
+        public async Task<ActionResult<ListData<MovieModel>>> Search([FromBody] MovieSearchFilter filter)
         {
             var res = await movieService.Search(filter);
             return Ok(res);
@@ -39,6 +39,13 @@ namespace MovieRecommendationApp.UI.Controllers
         public async Task<ActionResult<List<MovieModel>>> GetRecommendations(int id, int top)
         {
             var res = await movieService.GetRecommendations(id, top);
+            return Ok(res);
+        }
+
+        [HttpGet("genres")]
+        public async Task<ActionResult<List<GenreModel>>> GetGenres()
+        {
+            var res = await movieService.GetGenres();
             return Ok(res);
         }
     }

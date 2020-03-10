@@ -30,12 +30,19 @@ namespace MovieRecommendationApp.BLL.Services
         public async Task<ListData<MovieModel>> Search(MovieSearchFilter filter)
         {
             var query = dbContext.Movies
+                .Include(x => x.MoviesGenres)
+                .ThenInclude(x => x.Genre)
                 .OrderByDescending(x => x.ReleaseDate)
                 .AsQueryable();
 
             if (!string.IsNullOrWhiteSpace(filter.FilterText))
             {
                 query = query.Where(x => x.Title.ToUpper().Contains(filter.FilterText.Trim().ToUpper()));
+            }
+
+            if (filter.Genres != null && filter.Genres.Any())
+            {
+                query = query.Where(x => x.MoviesGenres.Any(x => filter.Genres.Any(g => g == x.GenreId)));
             }
 
             var totalCount = await query.CountAsync();
@@ -55,7 +62,9 @@ namespace MovieRecommendationApp.BLL.Services
         public async Task<MovieModel> Get(int id)
         {
             var movie = await dbContext.Movies
-                  .FirstOrDefaultAsync(x => x.Id == id);
+                .Include(x => x.MoviesGenres)
+                .ThenInclude(x => x.Genre)
+                .FirstOrDefaultAsync(x => x.Id == id);
 
             if (movie == null)
             {
@@ -96,6 +105,8 @@ namespace MovieRecommendationApp.BLL.Services
                 .ToList();
 
             var similarMovies = await dbContext.Movies
+                .Include(x => x.MoviesGenres)
+                .ThenInclude(x => x.Genre)
                 .Where(x => similarMoviesIds.Contains(x.Id))
                 .ToListAsync();
 
@@ -107,13 +118,23 @@ namespace MovieRecommendationApp.BLL.Services
                 .ToList();
         }
 
+        public Task<List<GenreModel>> GetGenres()
+            => dbContext.Genres
+            .OrderBy(x => x.Name)
+            .Select(x => new GenreModel
+            {
+                Id = x.Id,
+                Name = x.Name
+            })
+            .ToListAsync();
+
         private static MovieModel MapMovieToModel(Movie movie, string width) => new MovieModel
         {
             Id = movie.Id,
             OriginalId = movie.Id,
             Adult = movie.Adult,
             Budget = movie.Budget,
-            Genres = JsonConvert.DeserializeObject<IdName[]>(movie.Genres),
+            Genres = movie.MoviesGenres.Select(x => new IdName { id = x.Genre.Id, name = x.Genre.Name }).ToArray(),
             ImdbId = movie.ImdbId,
             OriginalLanguage = movie.OriginalLanguage,
             OriginalTitle = movie.OriginalTitle,
