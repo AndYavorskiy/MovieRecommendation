@@ -21,8 +21,8 @@ namespace MovieRecommendationApp.UI.Controllers
             this.movieService = movieService;
         }
 
-        [HttpPost]
-        public async Task<ActionResult<ListData<MovieModel>>> Search([FromBody] MovieSearchFilter filter)
+        [HttpGet]
+        public async Task<ActionResult<ListData<MovieModel>>> Search([FromQuery] MovieSearchFilterModel filter)
         {
             var res = await movieService.Search(filter);
             return Ok(res);

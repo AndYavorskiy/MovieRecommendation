@@ -27,7 +27,7 @@ namespace MovieRecommendationApp.BLL.Services
             this.distributedCache = distributedCache;
         }
 
-        public async Task<ListData<MovieModel>> Search(MovieSearchFilter filter)
+        public async Task<ListData<MovieModel>> Search(MovieSearchFilterModel filter)
         {
             var query = dbContext.Movies
                 .Include(x => x.MoviesGenres)
@@ -42,7 +42,7 @@ namespace MovieRecommendationApp.BLL.Services
 
             if (filter.Genres != null && filter.Genres.Any())
             {
-                query = query.Where(x => x.MoviesGenres.Any(x => filter.Genres.Any(g => g == x.GenreId)));
+                query = query.Where(x => x.MoviesGenres.Any(x => filter.Genres.Contains(x.GenreId)));
             }
 
             var totalCount = await query.CountAsync();

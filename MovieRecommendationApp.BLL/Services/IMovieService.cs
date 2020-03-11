@@ -6,7 +6,7 @@ namespace MovieRecommendationApp.BLL.Services
 {
     public interface IMovieService
     {
-        Task<ListData<MovieModel>> Search(MovieSearchFilter filter);
+        Task<ListData<MovieModel>> Search(MovieSearchFilterModel filter);
 
         Task<MovieModel> Get(int id);
 

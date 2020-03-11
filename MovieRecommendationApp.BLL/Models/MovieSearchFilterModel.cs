@@ -2,7 +2,7 @@
 
 namespace MovieRecommendationApp.BLL.Models
 {
-    public class MovieSearchFilter
+    public class MovieSearchFilterModel
     {
         public string FilterText { get; set; }
         public int PageIndex { get; set; }
