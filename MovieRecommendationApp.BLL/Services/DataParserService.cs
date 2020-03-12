@@ -1,15 +1,15 @@
 ﻿using Accord.MachineLearning;
 using Accord.Math.Distances;
-using Accord.Statistics.Models.Regression;
-using Accord.Statistics.Models.Regression.Fitting;
 using CsvHelper;
 using EFCore.BulkExtensions;
+using Iveonik.Stemmers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
 using MovieRecommendationApp.BLL.ParseModels;
 using MovieRecommendationApp.DAL.Contexts;
 using MovieRecommendationApp.DAL.Entities;
 using Newtonsoft.Json;
+using StopWord;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -119,20 +119,7 @@ namespace MovieRecommendationApp.BLL.Services
 
         public async Task GenerateCreditsGenresKeywordsCastSimilarityMatrix()
         {
-            var movies = await dbContext.Movies
-                .OrderBy(x => x.Id)
-                .Select(x => new MovieProcessingModel
-                {
-                    Id = x.Id,
-                    Crew = x.Crew,
-                    Cast = x.Cast,
-                    Keywords = x.Keywords,
-                    Genres = x.Genres,
-                    Overview = x.Overview
-                })
-                .ToListAsync();
-
-            var words = movies.Select(GetMovieData).ToArray().Tokenize();
+            var words = await GetTorenizedMoviesWords();
 
             var codebook = new TFIDF()
             {
@@ -143,14 +130,6 @@ namespace MovieRecommendationApp.BLL.Services
             codebook.Learn(words);
 
             var bow = codebook.Transform(words);
-
-            // Lets create a Logistic classifier to separate the two paragraphs:
-            var learner = new IterativeReweightedLeastSquares<LogisticRegression>()
-            {
-                Tolerance = 1e-4,  // Let's set some convergence parameters
-                MaxIterations = 100,  // maximum number of iterations to perform
-                Regularization = 0
-            };
 
             Console.WriteLine($"bows: {bow.Length}, words: {bow[0].Length}");
 
@@ -201,7 +180,30 @@ namespace MovieRecommendationApp.BLL.Services
             await UploanSimilarityMatrixToCache(filePath);
         }
 
-        private static string GetMovieData(MovieProcessingModel movie)
+        private async Task<string[][]> GetTorenizedMoviesWords()
+        {
+            var movies = await dbContext.Movies
+              .OrderBy(x => x.Id)
+              .Select(x => new MovieProcessingModel
+              {
+                  Id = x.Id,
+                  Crew = x.Crew,
+                  Cast = x.Cast,
+                  Keywords = x.Keywords,
+                  Genres = x.Genres,
+                  Overview = x.Overview
+              })
+              .ToListAsync();
+
+            var stemmer = new EnglishStemmer();
+
+            return movies
+                .Select(x => GetMovieData(x, stemmer))
+                .ToArray()
+                .Tokenize();
+        }
+
+        private static string GetMovieData(MovieProcessingModel movie, EnglishStemmer stemmer)
         {
             var top = 3;
 
@@ -227,7 +229,19 @@ namespace MovieRecommendationApp.BLL.Services
                 .Select(x => $"Gen-{x.name.Replace(" ", "")}")
                 .ToList();
 
-            return $"{JoinWords(crew)} {JoinWords(cast)} {JoinWords(keywords)} {JoinWords(genres)} {movie.Overview}";
+            var overviewWords = movie.Overview
+                .RemoveStopWords("en")
+                .Tokenize()
+                .Select(stemmer.Stem)
+                .ToList();
+
+            return JoinWords(new string[] {
+                JoinWords(crew),
+                JoinWords(cast),
+                JoinWords(keywords),
+                JoinWords(genres),
+                JoinWords(overviewWords),
+            });
         }
 
         private static string JoinWords(IEnumerable<string> words) => string.Join(" ", words);
@@ -318,8 +332,7 @@ namespace MovieRecommendationApp.BLL.Services
         private async Task UploanSimilarityMatrixToCache(string path)
         {
             //Remove old cache
-            var moviesCount = await dbContext.Movies.CountAsync();
-            for (int i = 0; i < moviesCount; i++)
+            for (int i = 0; i < 100000; i++)
             {
                 await distributedCache.RemoveAsync($"{SimilarityItems}-{i}");
             }
