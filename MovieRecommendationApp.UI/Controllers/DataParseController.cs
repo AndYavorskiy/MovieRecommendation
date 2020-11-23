@@ -38,5 +38,19 @@ namespace MovieRecommendationApp.UI.Controllers
             await dataParserService.SyncSimilarityMatrix();
             return Ok();
         }
+        
+        [HttpGet("compute-clasters")]
+        public async Task<ActionResult> ComputeClasters()
+        {
+            await dataParserService.ComputeClasters();
+            return Ok();
+        }
+
+        [HttpGet("load-clusters-from-file")]
+        public async Task<ActionResult> LoadClastersFromFile()
+        {
+            await dataParserService.LoadClastersFromFile();
+            return Ok();
+        }
     }
 }

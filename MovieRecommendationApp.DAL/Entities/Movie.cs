@@ -30,6 +30,7 @@ namespace MovieRecommendationApp.DAL.Entities
         public string Title { get; set; }
         public double VoteAverage { get; set; }
         public double VoteCount { get; set; }
+        public bool IsPosterAvailable { get; set; }
 
         //Credits
         public string Cast { get; set; }

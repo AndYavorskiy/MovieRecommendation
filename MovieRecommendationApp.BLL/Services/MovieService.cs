@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Accord.Diagnostics;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
 using MovieRecommendationApp.BLL.Models;
 using MovieRecommendationApp.BLL.ParseModels;
@@ -17,13 +18,16 @@ namespace MovieRecommendationApp.BLL.Services
         private const string SimilarityItems = "SimilarityItems";
 
         private readonly MovieRecommendationDbContext dbContext;
+        private readonly IDataParserService dataParserService;
         private readonly IDistributedCache distributedCache;
 
         public MovieService(
             MovieRecommendationDbContext dbContext,
+            IDataParserService dataParserService,
             IDistributedCache distributedCache)
         {
             this.dbContext = dbContext;
+            this.dataParserService = dataParserService;
             this.distributedCache = distributedCache;
         }
 
@@ -33,6 +37,7 @@ namespace MovieRecommendationApp.BLL.Services
                 .Include(x => x.MoviesGenres)
                 .ThenInclude(x => x.Genre)
                 .OrderByDescending(x => x.ReleaseDate)
+                .Where(x => x.IsPosterAvailable)
                 .AsQueryable();
 
             if (!string.IsNullOrWhiteSpace(filter.FilterText))
@@ -54,7 +59,22 @@ namespace MovieRecommendationApp.BLL.Services
 
             return new ListData<MovieModel>
             {
-                Items = items.Select(x => MapMovieToModel(x, "w400")).ToList(),
+                Items = items.Select(x =>
+                {
+
+                    try
+                    {
+                        return MapMovieToModel(x, "w400");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine(ex);
+                        return null;
+                    }
+
+                })
+
+                .Where(x => x != null).ToList(),
                 TotalCount = totalCount
             };
         }
@@ -74,11 +94,27 @@ namespace MovieRecommendationApp.BLL.Services
             return MapMovieToModel(movie, "original");
         }
 
+        public async Task SetNoPoster(int id)
+        {
+            var movie = await dbContext.Movies
+                .FirstOrDefaultAsync(x => x.Id == id);
+
+            if (movie == null)
+            {
+                throw new Exception("Movie not found.");
+            }
+
+            movie.IsPosterAvailable = false;
+            dbContext.Movies.Update(movie);
+            await dbContext.SaveChangesAsync();
+        }
+
         public async Task<List<MovieModel>> GetRecommendations(int id, int top)
         {
             var movies = await dbContext.Movies
+                .Where(x => x.IsPosterAvailable)
                 .OrderBy(x => x.Id)
-                .Select(x => new { x.Id })
+                .Select(x => new { x.Id, x.Title })
                 .ToListAsync();
 
             var movie = movies.FirstOrDefault(x => x.Id == id);
@@ -91,6 +127,11 @@ namespace MovieRecommendationApp.BLL.Services
             int movieIndex = movies.IndexOf(movie);
 
             var serealizedSimilariityList = await distributedCache.GetStringAsync($"{SimilarityItems}-{movieIndex}");
+            if (serealizedSimilariityList == null)
+            {
+                await dataParserService.SyncSimilarityMatrix();
+                serealizedSimilariityList = await distributedCache.GetStringAsync($"{SimilarityItems}-{movieIndex}");
+            }
 
             var movieSimilarities = serealizedSimilariityList == null
                 ? new List<double>()
@@ -104,11 +145,34 @@ namespace MovieRecommendationApp.BLL.Services
                 .Take(top)
                 .ToList();
 
+            if (ClusteredMovies.Data != null && ClusteredMovies.Data.Any() && ClusteredMovies.Data.ContainsKey(id))
+            {
+                var claster = ClusteredMovies.Data[id];
+
+                similarMoviesIds = ClusteredMovies.Data
+                    .Where(x => x.Value == claster)
+                    .Select(x => x.Key)
+                    .Where(x => x != id)
+                    .ToList();
+            }
+
             var similarMovies = await dbContext.Movies
                 .Include(x => x.MoviesGenres)
                 .ThenInclude(x => x.Genre)
                 .Where(x => similarMoviesIds.Contains(x.Id))
                 .ToListAsync();
+
+            Console.WriteLine($"------------------------- Original movie -----------------------------");
+            Console.WriteLine($" \t{movie.Id}\t{movie.Title}");
+            Console.WriteLine($"-------------------------Recommendations------------------------------");
+
+            int i = 1;
+            foreach (var item in similarMovies)
+            {
+                Console.WriteLine($"{i++}\t{item.Id}\t{item.Title}");
+            }
+
+            Console.WriteLine($"----------------------------------------------------------------------");
 
             return similarMoviesIds
                 .Join(similarMovies,

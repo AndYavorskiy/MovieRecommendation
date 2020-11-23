@@ -35,6 +35,14 @@ namespace MovieRecommendationApp.UI.Controllers
             return Ok(res);
         }
 
+        [HttpGet("{id}/SetNoPoster")]
+        public async Task<ActionResult> SetNoPoster(int id)
+        {
+            await movieService.SetNoPoster(id);
+            return Ok();
+        }
+
+
         [HttpGet("recommendations/{id}")]
         public async Task<ActionResult<List<MovieModel>>> GetRecommendations(int id, int top)
         {

@@ -12,5 +12,6 @@ namespace MovieRecommendationApp.BLL.Services
 
         Task<List<MovieModel>> GetRecommendations(int id, int top);
         Task<List<GenreModel>> GetGenres();
+        Task SetNoPoster(int id);
     }
 }

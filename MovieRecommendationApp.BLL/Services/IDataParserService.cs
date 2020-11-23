@@ -9,5 +9,7 @@ namespace MovieRecommendationApp.BLL.Services
         Task GenerateCreditsGenresKeywordsCastSimilarityMatrix();
 
         Task SyncSimilarityMatrix();
+        Task ComputeClasters();
+        Task LoadClastersFromFile();
     }
 }

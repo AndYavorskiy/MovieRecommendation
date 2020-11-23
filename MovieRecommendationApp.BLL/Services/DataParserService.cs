@@ -1,6 +1,19 @@
 ﻿using Accord.MachineLearning;
+using Accord.MachineLearning.Bayes;
+using Accord.MachineLearning.DecisionTrees.Learning;
+using Accord.MachineLearning.Performance;
+using Accord.MachineLearning.VectorMachines;
+using Accord.MachineLearning.VectorMachines.Learning;
+using Accord.Math;
 using Accord.Math.Distances;
+using Accord.Math.Optimization.Losses;
+using Accord.Statistics.Analysis;
+using Accord.Statistics.Distributions.DensityKernels;
+using Accord.Statistics.Kernels;
+using Accord.Statistics.Models.Markov;
+using Accord.Statistics.Models.Markov.Learning;
 using CsvHelper;
+using CsvHelper.Configuration.Attributes;
 using EFCore.BulkExtensions;
 using Iveonik.Stemmers;
 using Microsoft.EntityFrameworkCore;
@@ -16,6 +29,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Security.Cryptography.X509Certificates;
 using System.Threading.Tasks;
 
 namespace MovieRecommendationApp.BLL.Services
@@ -28,6 +42,8 @@ namespace MovieRecommendationApp.BLL.Services
 
         private readonly MovieRecommendationDbContext dbContext;
         private readonly IDistributedCache distributedCache;
+
+        public object BagOfVisualWords { get; private set; }
 
         public DataParserService(MovieRecommendationDbContext dbContext,
             IDistributedCache distributedCache)
@@ -119,7 +135,9 @@ namespace MovieRecommendationApp.BLL.Services
 
         public async Task GenerateCreditsGenresKeywordsCastSimilarityMatrix()
         {
-            var words = await GetTorenizedMoviesWords();
+            var movies = await GetMoviesProjection();
+
+            var words = GetTorenizedMoviesWords(movies);
 
             var codebook = new TFIDF()
             {
@@ -172,6 +190,128 @@ namespace MovieRecommendationApp.BLL.Services
             await UploanSimilarityMatrixToCache(filePath);
         }
 
+        private double[][] GetDataFully(List<MovieProcessingModel> movies)
+        {
+            var stemmer = new EnglishStemmer();
+
+            var data = movies.Select(x => GetMovieStructuredData(x, stemmer)).ToList();
+
+            var data2 = GetObservationsFull(data
+                .Select(x => new List<List<string>>
+                {
+                    x.Cast,
+                    x.Crew,
+                    x.Genres,
+                    x.Keywords,
+                    x.OverviewWords
+                }.SelectMany(x => x).ToArray()).ToArray(),
+                true);
+
+            return data2;
+        }
+
+        private double[][] GetObservationsFull(string[][] words, bool duplicatedOnly = false)
+        {
+            var codebook = new TFIDF()
+            {
+                Tf = TermFrequency.Log,
+                Idf = InverseDocumentFrequency.Default
+            };
+
+            if (duplicatedOnly)
+            {
+                var tmp = words.SelectMany(x => x).GroupBy(x => x).Select(x => new { Value = x.Key, Count = x.Count() }).OrderByDescending(x => x.Count).ToList();
+
+                var max = tmp.Max(x => x.Count);
+                var min = tmp.Min(x => x.Count);
+
+                var limit = min + ((max - min) * 0.50);
+
+                var tmp2 = tmp.Where(x => x.Count >= limit).Select(x => x.Value).ToList();
+
+                words = words.Select(x => x.Where(y => tmp2.Contains(y)).ToArray()).ToArray();
+            }
+
+            codebook.Learn(words);
+
+            return codebook.Transform(words);
+        }
+
+        public async Task LoadClastersFromFile()
+        {
+            var movies = (await GetMoviesProjection()).ToList();
+
+            using (var reader = new StreamReader("K-Mean-44103,86675328704.csv"))
+            using (var csv = new CsvReader(reader, CultureInfo.InvariantCulture))
+            {
+                csv.Configuration.Delimiter = ",";
+                csv.Configuration.HasHeaderRecord = true;
+
+                var data = csv.GetRecords<MovieClaster>();
+
+                ClusteredMovies.Data = data
+                  .ToDictionary(x => x.MovieId, y => y.Claster);
+            }
+        }
+
+        public async Task ComputeClasters()
+        {
+            var movies = (await GetMoviesProjection()).ToList();
+
+            var observations = GetDataFully(movies);
+
+            //ProcessOptimalKWithElbowMethod(observations, movies);
+
+            try
+            {
+                // Use a fixed seed for reproducibility
+                Accord.Math.Random.Generator.Seed = 0;
+
+                var kmeans = new MiniBatchKMeans(21, Math.Min(movies.Count(), 300));
+
+                var clasters = kmeans.Learn(observations);
+
+                int[] res = clasters.Decide(observations);
+
+                using (var sw = new StreamWriter($"K-Mean-{DateTime.Now.ToOADate()}.csv"))
+                using (var csvWriter = new CsvWriter(sw, CultureInfo.InvariantCulture))
+                {
+                    for (int i = 0; i < res.Length; i++)
+                    {
+                        csvWriter.WriteField(movies[i].Id);
+                        csvWriter.WriteField(res[i]);
+
+                        csvWriter.NextRecord();
+                    }
+                }
+
+                ClusteredMovies.Data = movies.Zip(res, (movie, claster) => new { movie.Id, claster })
+                    .ToDictionary(x => x.Id, y => y.claster);
+
+            }
+            catch (Exception ex)
+            {
+                throw ex;
+            }
+        }
+
+        public void ProcessOptimalKWithElbowMethod(double[][] observations, List<MovieProcessingModel> movies)
+        {
+            for (int k = 5; k <= 35; k++)
+            {
+                // Use a fixed seed for reproducibility
+                Accord.Math.Random.Generator.Seed = 0;
+
+                var kmeans = new MiniBatchKMeans(k, Math.Min(movies.Count(), 300));
+
+                var clasters = kmeans.Learn(observations);
+
+                int[] res = clasters.Decide(observations);
+
+                Console.WriteLine($"{k}\t{kmeans.Error}");
+            }
+        }
+
         public async Task SyncSimilarityMatrix()
         {
             var folderPath = Path.Combine(Path.GetDirectoryName(Assembly.GetEntryAssembly().Location), MatrixesFolder);
@@ -180,10 +320,22 @@ namespace MovieRecommendationApp.BLL.Services
             await UploanSimilarityMatrixToCache(filePath);
         }
 
-        private async Task<string[][]> GetTorenizedMoviesWords()
+        private string[][] GetTorenizedMoviesWords(List<MovieProcessingModel> movies, bool includeOverview = true)
         {
-            var movies = await dbContext.Movies
+            var stemmer = new EnglishStemmer();
+
+            return movies
+                .Select(x => GetMovieData(x, stemmer, includeOverview))
+                .ToArray()
+                .Tokenize();
+        }
+
+        private async Task<List<MovieProcessingModel>> GetMoviesProjection()
+        {
+            return await dbContext.Movies
+              .Where(x => x.IsPosterAvailable)
               .OrderBy(x => x.Id)
+              .Take(300) //---------------------------- Remove ----------------------------
               .Select(x => new MovieProcessingModel
               {
                   Id = x.Id,
@@ -194,54 +346,96 @@ namespace MovieRecommendationApp.BLL.Services
                   Overview = x.Overview
               })
               .ToListAsync();
-
-            var stemmer = new EnglishStemmer();
-
-            return movies
-                .Select(x => GetMovieData(x, stemmer))
-                .ToArray()
-                .Tokenize();
         }
 
-        private static string GetMovieData(MovieProcessingModel movie, EnglishStemmer stemmer)
+        private static StructuredDataModel GetMovieStructuredData(MovieProcessingModel movie, EnglishStemmer stemmer)
         {
             var top = 3;
 
             var crew = JsonConvert.DeserializeObject<CrewModel[]>(movie.Crew)
                 .Where(x => string.Equals(x.job, "Director", StringComparison.InvariantCultureIgnoreCase))
                 .Take(top)
-                .Select(x => $"Crew-{x.name.Replace(" ", "")}")
+                .Select(x => $"Crew{x.name.Replace(" ", "")}".ToLower())
                 .ToList();
 
             var cast = JsonConvert.DeserializeObject<CastBigModel[]>(movie.Cast)
                 .OrderBy(x => x.order)
                 .Take(top)
-                .Select(x => $"Cast-{x.name.Replace(" ", "")}")
+                .Select(x => $"Cast{x.name.Replace(" ", "")}".ToLower())
                 .ToList();
 
             var keywords = JsonConvert.DeserializeObject<IdName[]>(movie.Keywords)
                 .Take(top)
-                .Select(x => $"Kw-{x.name.Replace(" ", "")}")
+                .Select(x => $"Kw{x.name.Replace(" ", "")}".ToLower())
                 .ToList();
 
             var genres = JsonConvert.DeserializeObject<IdName[]>(movie.Genres)
                 .Take(top)
-                .Select(x => $"Gen-{x.name.Replace(" ", "")}")
+                .Select(x => $"Gen{x.name.Replace(" ", "")}".ToLower())
                 .ToList();
 
             var overviewWords = movie.Overview
                 .RemoveStopWords("en")
                 .Tokenize()
                 .Select(stemmer.Stem)
+                .Select(x => x.ToLower())
                 .ToList();
 
-            return JoinWords(new string[] {
+            return new StructuredDataModel
+            {
+                Crew = crew,
+                Cast = cast,
+                Keywords = keywords,
+                Genres = genres,
+                OverviewWords = overviewWords
+            };
+        }
+
+        private static string GetMovieData(MovieProcessingModel movie, EnglishStemmer stemmer, bool includeOverview = true)
+        {
+            var top = 3;
+
+            var crew = JsonConvert.DeserializeObject<CrewModel[]>(movie.Crew)
+                .Where(x => string.Equals(x.job, "Director", StringComparison.InvariantCultureIgnoreCase))
+                .Take(top)
+                .Select(x => $"Crew{x.name.Replace(" ", "")}")
+                .ToList();
+
+            var cast = JsonConvert.DeserializeObject<CastBigModel[]>(movie.Cast)
+                .OrderBy(x => x.order)
+                .Take(top)
+                .Select(x => $"Cast{x.name.Replace(" ", "")}")
+                .ToList();
+
+            var keywords = JsonConvert.DeserializeObject<IdName[]>(movie.Keywords)
+                .Take(top)
+                .Select(x => $"Kw{x.name.Replace(" ", "")}")
+                .ToList();
+
+            var genres = JsonConvert.DeserializeObject<IdName[]>(movie.Genres)
+                .Take(top)
+                .Select(x => $"Gen{x.name.Replace(" ", "")}")
+                .ToList();
+
+            var text = JoinWords(new string[] {
                 JoinWords(crew),
                 JoinWords(cast),
                 JoinWords(keywords),
-                JoinWords(genres),
-                JoinWords(overviewWords),
+                JoinWords(genres)
             });
+
+            if (includeOverview)
+            {
+                var overviewWords = movie.Overview
+                    .RemoveStopWords("en")
+                    .Tokenize()
+                    .Select(stemmer.Stem)
+                    .ToList();
+
+                return JoinWords(new string[] { text, JoinWords(overviewWords) });
+            }
+
+            return text;
         }
 
         private static string JoinWords(IEnumerable<string> words) => string.Join(" ", words);
@@ -370,7 +564,7 @@ namespace MovieRecommendationApp.BLL.Services
             return data;
         }
 
-        private class MovieProcessingModel
+        public class MovieProcessingModel
         {
             public int Id { get; set; }
             public string Crew { get; set; }
@@ -379,5 +573,28 @@ namespace MovieRecommendationApp.BLL.Services
             public string Genres { get; set; }
             public string Overview { get; set; }
         }
+
+        private class StructuredDataModel
+        {
+            public List<string> Crew { get; set; }
+            public List<string> Cast { get; set; }
+            public List<string> Keywords { get; set; }
+            public List<string> Genres { get; set; }
+            public List<string> OverviewWords { get; set; }
+        }
+    }
+
+    public static class ClusteredMovies
+    {
+        public static Dictionary<int, int> Data { get; set; }
+    }
+
+    public class MovieClaster
+    {
+        [Index(0)]
+        public int MovieId { get; set; }
+
+        [Index(1)]
+        public int Claster { get; set; }
     }
 }
